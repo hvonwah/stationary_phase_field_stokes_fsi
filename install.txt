@@ -1,4 +1,4 @@
-# Get NGSOLVE
+# Get NGSOLVE and NETGEN
 
 
 git clone https://github.com/NGSolve/ngsolve.git src-ngs
@@ -13,7 +13,7 @@ cd build-ngs
 
 # BUILD NGSOLVE using cmake. The details may depend of your computer and 
 # OS/distribution. For further details and cmake options, see the documentation
-# at https://docu.ngsolve.org/v6.2.2105/install/install_sources.html
+# at https://docu.ngsolve.org/nightly/install/install_sources.html
 
 cmake \
 -DCMAKE_BUILD_TYPE=RELEASE \
@@ -23,8 +23,8 @@ cmake \
 -DUSE_UMFPACK=ON \
 -DUSE_MKL=ON \
 -DUSE_MPI=OFF \
--DCMAKE_CXX_COMPILER=g++-10 \
--DCMAKE_C_COMPILER=gcc-10 \
+-DUSE_OCC=ON \
+-DBUILD_OCC=ON \
 ../src-ngs/
 
 make

@@ -1,4 +1,5 @@
 from netgen.geom2d import SplineGeometry
+from netgen.occ import *
 from ngsolve import *
 from ngsolve.solvers import Newton, PreconditionedRichardson
 from xfem import *
@@ -53,11 +54,10 @@ def sneddon_vol(data):
     return vol_ex
 
 
-def sneddon_stationary(data, hmax, mesh_factor, eps, gamma, order=1,
-                       kappa=1e-10, newton_tol=1e-8, newton_print=False,
-                       newton_solver='umfpack', pseudo_time_steps=5,
-                       compile_flag=False, wait_compile=False, vtk_flag=False,
-                       **kwargs):
+def phase_field_stationary(data, mesh, bc_dir, eps, gamma, order=1,
+                           kappa=1e-10, newton_tol=1e-8, newton_print=False,
+                           newton_solver='umfpack', pseudo_time_steps=5,
+                           compile_flag=False, wait_compile=False, **kwargs):
     '''
     We use a phase-field approach to compute an opening crack. We then
     construct a level set of the crack geometry by matching the crack
@@ -66,12 +66,12 @@ def sneddon_stationary(data, hmax, mesh_factor, eps, gamma, order=1,
 
     Parameters
     ----------
-    data : dict{'l0', 'G_c', 'E', 'nu_s', 'p'}
+    data : dict{'G_c', 'E', 'nu_s', 'p'}
         Physical parameters determining Sneddon's test.
-    hmax : float
-        Maximal mesh size at fracture.
-    mesh_factor : float
-        Factor by which the outer domain is coarser by.
+    mesh : ngsolve.Mesh
+        Mesh with material 'crack' for phase-field initialisation
+    bc_dir : string
+        Name of the outer boundary.
     eps : float
         Phase field parameter.
     gamma : float
@@ -93,8 +93,6 @@ def sneddon_stationary(data, hmax, mesh_factor, eps, gamma, order=1,
         Strong compile weak form.
     wait_compile : boolean
         Wait for cpp compile to complete.
-    vtk_flag : boolean
-        Write VTK output of phase field.
 
     Returns
     -------
@@ -105,33 +103,14 @@ def sneddon_stationary(data, hmax, mesh_factor, eps, gamma, order=1,
     '''
     for key, value in kwargs.items():
         warnings.warn(f'Unknown keyword argument {key}={value} in call of '
-                      + 'sneddon_stationary', category=SyntaxWarning)
+                      + 'phase_field_stationary', category=SyntaxWarning)
 
-    l0 = data['l0']
     G_c = data['G_c']
     E = data['E']
     nu_s = data['nu_s']
     p = data['p']
     mu_s = E / (2 * (1 + nu_s))
     lam_s = nu_s * E / ((1 + nu_s) * (1 - 2 * nu_s))
-
-    # --------------------------------- MESH ----------------------------------
-    geo = SplineGeometry()
-    bc_dir = 'out'
-    _l = max(2 * hmax, 0.01)
-    geo.AddRectangle((0, 0), (4, 4), bcs=[bc_dir, bc_dir, bc_dir, bc_dir],
-                     leftdomain=3, rightdomain=0)
-    geo.AddRectangle((2 - l0 - _l, 2 - _l), (2 + l0 + _l, 2 + _l),
-                     leftdomain=2, rightdomain=3)
-    geo.AddRectangle((2 - l0, 2 - hmax), (2 + l0, 2 + hmax), leftdomain=1,
-                     rightdomain=2)
-
-    geo.SetMaterial(1, 'crack')
-    geo.SetDomainMaxH(3, mesh_factor * hmax)
-    geo.SetDomainMaxH(2, hmax)
-    geo.SetDomainMaxH(1, hmax)
-
-    mesh = Mesh(geo.GenerateMesh(grading=0.25, quad_dominated=False))
 
     # ------------------------- FINITE ELEMENT SPACE --------------------------
     V = VectorH1(mesh, order=order, dirichlet=bc_dir)
@@ -181,6 +160,167 @@ def sneddon_stationary(data, hmax, mesh_factor, eps, gamma, order=1,
     return gfu
 
 
+def sneddon_stationary(data, hmax, mesh_factor, eps, gamma, order=1,
+                       kappa=1e-10, newton_tol=1e-8, newton_print=False,
+                       newton_solver='umfpack', pseudo_time_steps=5,
+                       compile_flag=False, wait_compile=False, **kwargs):
+    '''
+    We use a phase-field approach to compute an opening crack. We then
+    construct a level set of the crack geometry by matching the crack
+    volume computed from the phase field with the level set crack volume
+    using a Newton scheme.
+
+    Parameters
+    ----------
+    data : dict{'l0', 'G_c', 'E', 'nu_s', 'p'}
+        Physical parameters determining Sneddon's test.
+    hmax : float
+        Maximal mesh size at fracture.
+    mesh_factor : float
+        Factor by which the outer domain is coarser by.
+    eps : float
+        Phase field parameter.
+    gamma : float
+        Constraint penalty parameter.
+    order : float
+        Polynomial order of phase field and solid finite element spaces.
+    kappa : float
+        Regularisation parameter.
+    newton_tol : float
+        Tolerance for phase field Newton scheme.
+    newton_print : boolean
+        Print output from phase filed Newton scheme.
+    newton_solver : string
+        Direct solver to use in Newton scheme.
+    pseudo_time_steps : int
+        Number of pseudo time step for which we solve the phase-field
+        problem.
+    compile_flag : boolean
+        Strong compile weak form.
+    wait_compile : boolean
+        Wait for cpp compile to complete.
+
+    Returns
+    -------
+    gfu : ngsolve.GridFunction
+        Resulting finite element function containing the phase-field and
+        displacement field.
+
+    '''
+    for key, value in kwargs.items():
+        warnings.warn(f'Unknown keyword argument {key}={value} in call of '
+                      + 'sneddon_stationary', category=SyntaxWarning)
+
+    l0 = data['l0']
+
+    # --------------------------------- MESH ----------------------------------
+    geo = SplineGeometry()
+    bc_dir = 'out'
+    _l = max(2 * hmax, 0.01)
+    geo.AddRectangle((0, 0), (4, 4), bcs=[bc_dir, bc_dir, bc_dir, bc_dir],
+                     leftdomain=3, rightdomain=0)
+    geo.AddRectangle((2 - l0 - _l, 2 - _l), (2 + l0 + _l, 2 + _l),
+                     leftdomain=2, rightdomain=3)
+    geo.AddRectangle((2 - l0, 2 - hmax), (2 + l0, 2 + hmax), leftdomain=1,
+                     rightdomain=2)
+
+    geo.SetMaterial(1, 'crack')
+    geo.SetDomainMaxH(3, mesh_factor * hmax)
+    geo.SetDomainMaxH(2, hmax)
+    geo.SetDomainMaxH(1, hmax)
+
+    mesh = Mesh(geo.GenerateMesh(grading=0.25, quad_dominated=False))
+
+    # -------------------------- PHASE-FIELD PROBLEM --------------------------
+    gfu = phase_field_stationary(data, mesh, bc_dir, eps, gamma, order,
+                                 kappa, newton_tol, newton_print,
+                                 newton_solver, pseudo_time_steps,
+                                 compile_flag, wait_compile, **kwargs)
+
+    return gfu
+
+
+def sneddon_T_stationary(data, hmax, mesh_factor, eps, gamma, order=1,
+                         kappa=1e-10, newton_tol=1e-8, newton_print=False,
+                         newton_solver='umfpack', pseudo_time_steps=5,
+                         compile_flag=False, wait_compile=False, **kwargs):
+    '''
+    We use a phase-field approach to compute an opening crack. We then
+    construct a level set of the crack geometry by matching the crack
+    volume computed from the phase field with the level set crack volume
+    using a Newton scheme.
+
+    Parameters
+    ----------
+    data : dict{'l0', 'G_c', 'E', 'nu_s', 'p'}
+        Physical parameters determining Sneddon's test.
+    hmax : float
+        Maximal mesh size at fracture.
+    mesh_factor : float
+        Factor by which the outer domain is coarser by.
+    eps : float
+        Phase field parameter.
+    gamma : float
+        Constraint penalty parameter.
+    order : float
+        Polynomial order of phase field and solid finite element spaces.
+    kappa : float
+        Regularisation parameter.
+    newton_tol : float
+        Tolerance for phase field Newton scheme.
+    newton_print : boolean
+        Print output from phase filed Newton scheme.
+    newton_solver : string
+        Direct solver to use in Newton scheme.
+    pseudo_time_steps : int
+        Number of pseudo time step for which we solve the phase-field
+        problem.
+    compile_flag : boolean
+        Strong compile weak form.
+    wait_compile : boolean
+        Wait for cpp compile to complete.
+
+    Returns
+    -------
+    gfu : ngsolve.GridFunction
+        Resulting finite element function containing the phase-field and
+        displacement field.
+
+    '''
+    for key, value in kwargs.items():
+        warnings.warn(f'Unknown keyword argument {key}={value} in call of '
+                      + 'sneddon_T_stationary', category=SyntaxWarning)
+
+    l0 = data['l0']
+    bc_dir = 'outer'
+
+    # --------------------------------- MESH ----------------------------------
+    base = MoveTo(0, 0).Rectangle(4, 4).Face()
+    crack = MoveTo(2 - l0, 2 - hmax).Line(2 * l0 - hmax, 0).Line(0, -l0 + hmax)
+    crack = crack.Line(2 * hmax, 0).Line(0, 2 * l0).Line(-2 * hmax, 0)
+    crack = crack.Line(0, -l0 + hmax).Line(-2 * l0 + hmax, 0).Close().Face()
+    base -= crack
+
+    base.faces.name = "material"
+    base.faces.maxh = mesh_factor * hmax
+    crack.faces.name = "crack"
+    crack.faces.maxh = hmax
+
+    geo = Glue([base, crack])
+    geo.edges.name = bc_dir
+
+    geo = OCCGeometry(geo, dim=2)
+    mesh = Mesh(geo.GenerateMesh(grading=0.15, quad_dominated=False))
+
+    # -------------------------- PHASE-FIELD PROBLEM --------------------------
+    gfu = phase_field_stationary(data, mesh, bc_dir, eps, gamma, order,
+                                 kappa, newton_tol, newton_print,
+                                 newton_solver, pseudo_time_steps,
+                                 compile_flag, wait_compile, **kwargs)
+
+    return gfu
+
+
 def tcv_from_phase_field(gfu):
     '''
     Compute the total crack volume from a phase-field finite element solution.
@@ -193,7 +333,7 @@ def tcv_from_phase_field(gfu):
                      order=2 * order - 1)
 
 
-def cod_from_phase_field(gfu, lines):
+def cod_from_phase_field(gfu, lines, vertical=False):
     '''
     Compute the crack opening displacements by integrating along a line
     through the phase-field.
@@ -215,9 +355,13 @@ def cod_from_phase_field(gfu, lines):
     mesh = gf_u.space.mesh
     order = gf_u.space.globalorder
 
+    _x = CF(x)
+    if vertical:
+        _x = CF(y)
+
     # Compute crack opening width based on phase-field
     lsetp1_line = GridFunction(H1(mesh, order=1))
-    InterpolateToP1(x - 2, lsetp1_line)
+    InterpolateToP1(_x - 2, lsetp1_line)
     ci_line = CutInfo(mesh, lsetp1_line)
     el_line = ci_line.GetElementsOfType(IF)
     ds_line = dCut(lsetp1_line, IF, order=2 * order, definedonelements=el_line)
@@ -226,7 +370,7 @@ def cod_from_phase_field(gfu, lines):
 
     crack_openings = []
     for x0 in lines:
-        InterpolateToP1(x - x0, lsetp1_line)
+        InterpolateToP1(_x - x0, lsetp1_line)
         ci_line.Update(lsetp1_line)
         _cod = Integrate(line_ind * ds_line, mesh)
 
@@ -317,7 +461,7 @@ def make_levelset_from_cod_convex(pnt_and_cod, mesh):
     Create a piecewise linear level set function based on a list of
     x-coordinates and crack apertures. Assumes the set of points build a
     convex set.
-    
+
     Parameters
     ----------
     pnt_and_cod : list[tuple]
