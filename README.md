@@ -1,7 +1,6 @@
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7443025.svg)](https://doi.org/10.5281/zenodo.7443025)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7950145.svg)](https://doi.org/10.5281/zenodo.7950145)
 
-
-This repository contains the reproduction scripts and resulting data for the paper "A high-precision framework for phase-field fracture interface reconstructions with application to Stokes fluid-filled fracture surrounded by an elastic medium" by H. v. Wahl and T. Wick.
+This repository contains the reproduction scripts and resulting data for the paper "A high-accuracy framework for phase-field fracture interface reconstructions with application to Stokes fluid-filled fracture surrounded by an elastic medium" by H. v. Wahl and T. Wick.
 
 # Files
 ```
